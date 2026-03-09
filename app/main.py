@@ -4,7 +4,7 @@ from app.database import get_db_connection
 from typing import Optional
 import psycopg2
 
-app = FastAPI(title="Break the Login API")
+app = FastAPI(title="Break the Login v1")
 
 class UserRegister(BaseModel):
     email: str

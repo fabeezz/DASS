@@ -14,3 +14,8 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+
+class TicketCreate(BaseModel):
+    title: str
+    description: str
+    severity: str = "LOW"

@@ -1,12 +1,12 @@
 from fastapi import FastAPI
-from app.routers import auth, passwords
+from app.routers import auth, passwords, tickets
 from app.db.database import get_db_connection
 
 app = FastAPI(title="Break the Login API - Secure Version")
 
-# Înregistrăm rutele din celelalte fișiere
 app.include_router(auth.router)
 app.include_router(passwords.router)
+app.include_router(tickets.router)
 
 @app.get("/")
 def read_root():

@@ -1,9 +1,9 @@
-from fastapi import APIRouter, HTTPException, Response, Cookie
+from fastapi import APIRouter, HTTPException, Response, Cookie, Request
 from typing import Optional
 from datetime import datetime, timedelta
 import secrets
 
-from app.db.database import get_db_connection
+from app.db.database import get_db_connection, log_audit_event
 from app.schemas import UserRegister, UserLogin
 from app.security import get_password_hash, verify_password, validate_password_complexity
 
@@ -17,7 +17,7 @@ LOCKOUT_MINUTES = 5
 active_sessions = {}
 
 @router.post("/register")
-def register_user(user: UserRegister):
+def register_user(user: UserRegister, request: Request):
     # VULNERABILITATE v1 (4.1): Orice parolă era acceptată (ex: "123").
     # FIX v2: Verificăm complexitatea parolei (Password Policy).
     if not validate_password_complexity(user.password):
@@ -40,7 +40,10 @@ def register_user(user: UserRegister):
             (user.email, hashed_password)
         )
         new_user = cur.fetchone()
-        conn.commit() 
+        conn.commit()
+        
+        log_audit_event(new_user['id'], "REGISTER", "auth", None, request.client.host) 
+        
         cur.close()
         conn.close()
         
@@ -52,7 +55,7 @@ def register_user(user: UserRegister):
         raise HTTPException(status_code=500, detail="Eroare internă de server.")
 
 @router.post("/login")
-def login_user(user: UserLogin, response: Response):
+def login_user(user: UserLogin, response: Response, request: Request):
     # VULNERABILITATE v1 (4.3): Lipsă rate limiting (permitea atacuri Brute Force).
     # FIX v2: Verificăm dacă userul este blocat temporar din cauza încercărilor eșuate.
     attempt_info = login_attempts.get(user.email, {"attempts": 0, "locked_until": None})
@@ -72,6 +75,7 @@ def login_user(user: UserLogin, response: Response):
             raise HTTPException(status_code=401, detail="Invalid credentials")
             
         if db_user['locked']:
+            log_audit_event(db_user['id'], "LOGIN_LOCKED_ACCOUNT", "auth", None, request.client.host)
             raise HTTPException(status_code=403, detail="Contul este blocat permanent.")
 
         # VULNERABILITATE v1 (4.2): Comparam parolele în clar.
@@ -83,6 +87,10 @@ def login_user(user: UserLogin, response: Response):
                 attempt_info["locked_until"] = datetime.now() + timedelta(minutes=LOCKOUT_MINUTES)
                 cur.execute("UPDATE users SET locked = TRUE WHERE id = %s;", (db_user['id'],))
                 conn.commit()
+                log_audit_event(db_user['id'], "ACCOUNT_TEMPORARILY_LOCKED", "auth", None, request.client.host)
+            else:
+                log_audit_event(db_user['id'], "LOGIN_FAILED", "auth", None, request.client.host)
+                
             login_attempts[user.email] = attempt_info
             
             # FIX v2 (4.4): Același mesaj generic ca la user inexistent.
@@ -108,6 +116,9 @@ def login_user(user: UserLogin, response: Response):
         
         cur.close()
         conn.close()
+
+        log_audit_event(db_user['id'], "LOGIN_SUCCESS", "auth", None, request.client.host)
+
         return {"status": "success", "message": "Autentificare cu succes!"}
     except HTTPException:
         raise
@@ -140,10 +151,12 @@ def get_current_user(auth_session: Optional[str] = Cookie(None)):
         raise HTTPException(status_code=500, detail="Eroare internă.")
 
 @router.post("/logout")
-def logout_user(response: Response, auth_session: Optional[str] = Cookie(None)):
+def logout_user(response: Response, request: Request, auth_session: Optional[str] = Cookie(None)):
     # VULNERABILITATE v1 (4.5): Doar ștergeam cookie-ul, sesiunea rămânea validă.
     # FIX v2: Invalidare reală pe server a sesiunii (token-ul devine inutilizabil).
     if auth_session in active_sessions:
+        user_id = active_sessions[auth_session]
+        log_audit_event(user_id, "LOGOUT", "auth", None, request.client.host)
         del active_sessions[auth_session]
         
     response.delete_cookie(key="auth_session")

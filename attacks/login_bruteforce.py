@@ -3,7 +3,7 @@ import time
 
 # Configurarea țintei
 URL = "http://127.0.0.1:8000/login"
-TARGET_EMAIL = "test@hacker.com" # Schimbă cu email-ul pe care l-ai înregistrat tu
+TARGET_EMAIL = "test@secure.com" # Schimbă cu email-ul pe care l-ai înregistrat tu
 
 # Un "dicționar" mic de parole pe care atacatorul le încearcă
 PASSWORD_LIST = [

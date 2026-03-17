@@ -60,6 +60,52 @@ def get_my_tickets(request: Request, user_id: int = Depends(get_current_user_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail="Eroare internă.")
 
+# R: READ SINGLE (Vizualizare un singur tichet - Securizat anti-IDOR)
+@router.get("/{ticket_id}")
+def get_ticket_by_id(ticket_id: int, request: Request, user_id: int = Depends(get_current_user_id)):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # [FIX v2 (Control acces server-side)]: Căutăm tichetul, dar OBLIGATORIU cerem ca owner_id să fie user-ul curent
+        cur.execute("SELECT * FROM tickets WHERE id = %s AND owner_id = %s;", (ticket_id, user_id))
+        ticket = cur.fetchone()
+        
+        cur.close()
+        conn.close()
+        
+        if not ticket:
+            # Mesaj generic, nu îi spunem atacatorului dacă tichetul există măcar
+            raise HTTPException(status_code=404, detail="Tichetul nu există sau nu ai acces la el.")
+            
+        return {"status": "success", "ticket": ticket}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Eroare internă.")
+
+# SEARCH (Căutare securizată anti-SQL Injection)
+@router.get("/search/items")
+def search_tickets(query: str, request: Request, user_id: int = Depends(get_current_user_id)):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # [FIX v2 (Query Parametrizate)]: Folosim %s și delegăm bazei de date escaparea caracterelor
+        # Bonus: căutăm doar în tichetele utilizatorului curent!
+        search_pattern = f"%{query}%"
+        cur.execute(
+            "SELECT * FROM tickets WHERE owner_id = %s AND (title ILIKE %s OR description ILIKE %s);",
+            (user_id, search_pattern, search_pattern)
+        )
+        tickets = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        return {"status": "success", "results": tickets}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Eroare internă.")
+
 # U: UPDATE (Modificare tichet)
 @router.put("/{ticket_id}")
 def update_ticket(ticket_id: int, ticket: TicketUpdate, request: Request, user_id: int = Depends(get_current_user_id)):

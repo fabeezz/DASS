@@ -194,11 +194,6 @@ def reset_password(request: ResetPasswordRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# =====================================================================
-# BUSINESS LOGIC (TICKETS) - VULNERABIL (Pentru demonstrarea IDOR)
-# =====================================================================
-
 @app.post("/tickets")
 def create_ticket(ticket: TicketCreate, auth_session: Optional[str] = Cookie(None)):
     if not auth_session:

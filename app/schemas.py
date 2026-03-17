@@ -19,3 +19,8 @@ class TicketCreate(BaseModel):
     title: str
     description: str
     severity: str = "LOW"
+
+class TicketUpdate(BaseModel):
+    title: str
+    description: str
+    severity: str

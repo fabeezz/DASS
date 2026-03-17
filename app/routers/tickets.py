@@ -1,25 +1,26 @@
-from fastapi import APIRouter, HTTPException, Cookie, Request, Query
+from fastapi import APIRouter, HTTPException, Cookie, Request, Depends
+from fastapi.security import APIKeyCookie
 from typing import Optional
 
 from app.db.database import get_db_connection, log_audit_event
 from app.schemas import TicketCreate, TicketUpdate
-from app.routers.auth import active_sessions
+from app.security import verify_jwt_token
 
 router = APIRouter(tags=["Business (Tickets)"], prefix="/tickets")
+cookie_scheme = APIKeyCookie(name="auth_session", auto_error=False)
 
-def get_current_user_id(auth_session: str):
+def get_current_user_id(auth_session: str = Depends(cookie_scheme)):
     if not auth_session:
         raise HTTPException(status_code=401, detail="Neautentificat.")
-    user_id = active_sessions.get(auth_session)
+    
+    user_id = verify_jwt_token(auth_session)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sesiune invalidă sau expirată.")
     return user_id
 
 # C: CREATE (Creare tichet)
 @router.post("/")
-def create_ticket(ticket: TicketCreate, request: Request, auth_session: Optional[str] = Cookie(None)):
-    user_id = get_current_user_id(auth_session)
-    
+def create_ticket(ticket: TicketCreate, request: Request, user_id: int = Depends(get_current_user_id)):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -42,12 +43,12 @@ def create_ticket(ticket: TicketCreate, request: Request, auth_session: Optional
 
 # R: READ (Vizualizare toate tichetele mele)
 @router.get("/")
-def get_my_tickets(request: Request, auth_session: Optional[str] = Cookie(None)):
-    user_id = get_current_user_id(auth_session)
-    
+def get_my_tickets(request: Request, user_id: int = Depends(get_current_user_id)):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
+        
+        # [PREVENIRE IDOR]: Aducem doar tichetele unde owner_id = user_id
         cur.execute("SELECT * FROM tickets WHERE owner_id = %s ORDER BY created_at DESC;", (user_id,))
         tickets = cur.fetchall()
         
@@ -61,14 +62,13 @@ def get_my_tickets(request: Request, auth_session: Optional[str] = Cookie(None))
 
 # U: UPDATE (Modificare tichet)
 @router.put("/{ticket_id}")
-def update_ticket(ticket_id: int, ticket: TicketUpdate, request: Request, auth_session: Optional[str] = Cookie(None)):
-    user_id = get_current_user_id(auth_session)
-    
+def update_ticket(ticket_id: int, ticket: TicketUpdate, request: Request, user_id: int = Depends(get_current_user_id)):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # IDOR PREVENTION: Updatam DOAR dacă ticketul ne aparține (owner_id = user_id)
+        # [VULNERABILITATE v1]: Aplicația nu verifica cui aparține tichetul la modificare.
+        # [FIX v2 (Barem: Control acces server-side)]: Verificăm explicit ownership-ul (owner_id = user_id extras din JWT).
         cur.execute(
             """
             UPDATE tickets SET title = %s, description = %s, severity = %s 
@@ -95,14 +95,12 @@ def update_ticket(ticket_id: int, ticket: TicketUpdate, request: Request, auth_s
 
 # D: DELETE (Ștergere tichet)
 @router.delete("/{ticket_id}")
-def delete_ticket(ticket_id: int, request: Request, auth_session: Optional[str] = Cookie(None)):
-    user_id = get_current_user_id(auth_session)
-    
+def delete_ticket(ticket_id: int, request: Request, user_id: int = Depends(get_current_user_id)):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # IDOR PREVENTION: Stergem DOAR dacă ticketul ne aparține
+        # [PREVENIRE IDOR]: Ștergem DOAR dacă ticketul ne aparține
         cur.execute("DELETE FROM tickets WHERE id = %s AND owner_id = %s RETURNING id;", (ticket_id, user_id))
         deleted = cur.fetchone()
         conn.commit()

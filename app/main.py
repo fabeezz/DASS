@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Response, Cookie
 from pydantic import BaseModel
-from database import get_db_connection
+from app.database import get_db_connection
 from typing import Optional
 
 app = FastAPI(title="Break the Login v1 - Vulnerable API")
@@ -231,6 +231,52 @@ def get_my_tickets(auth_session: Optional[str] = Cookie(None)):
         return {"status": "success", "tickets": tickets}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tickets/search")
+def search_tickets(query: str, auth_session: Optional[str] = Cookie(None)):
+    if not auth_session:
+        raise HTTPException(status_code=401, detail="Neautentificat.")
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # [VULNERABILITATE v1]: Concatenare directă de string-uri (Risc de SQL Injection)
+        # Nu folosim query parametrizat
+        sql_query = f"SELECT * FROM tickets WHERE title LIKE '%{query}%' OR description LIKE '%{query}%';"
+        cur.execute(sql_query)
+        
+        results = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        return {"status": "success", "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tickets/{ticket_id}")
+def get_ticket_by_id(ticket_id: int, auth_session: Optional[str] = Cookie(None)):
+    if not auth_session:
+        raise HTTPException(status_code=401, detail="Neautentificat.")
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # [VULNERABILITATE v1]: Nu verificăm ownership-ul (Risc de IDOR)
+        # Permitem vizualizarea oricărui tichet dacă ID-ul este cunoscut
+        cur.execute("SELECT * FROM tickets WHERE id = %s;", (ticket_id,))
+        ticket = cur.fetchone()
+        
+        cur.close()
+        conn.close()
+        
+        if not ticket:
+            raise HTTPException(status_code=404, detail="Tichetul nu a fost găsit.")
+            
+        return {"status": "success", "ticket": ticket}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Eroare internă de server.")
 
 @app.put("/tickets/{ticket_id}")
 def update_ticket(ticket_id: int, ticket: TicketUpdate, auth_session: Optional[str] = Cookie(None)):

